@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LMF – DVD Screensaver (Overlap Fix)</title>
+<style>
+  html,body{
+    height:100%;
+    margin:0;
+    overflow:hidden;
+    background:#ffffff;
+  }
+  canvas{
+    display:block;
+    width:100vw;
+    height:100vh;
+  }
+  .hint{
+    position:fixed;
+    left:12px;
+    bottom:12px;
+    font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size:12px;
+    color:#111;
+    background:rgba(255,255,255,0.9);
+    border:1px solid rgba(0,0,0,0.08);
+    padding:6px 8px;
+    border-radius:8px;
+    max-width:260px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.08);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hint">
+Klick: Geschwindigkeit erhöhen.<br>
+Farbwechsel bei Randtreffern.<br>
+Overlap: Zentrales Logo bleibt sichtbar.
+</div>
+
+<script>
+(function(){
+
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+
+  let W = window.innerWidth;
+  let H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+
+  window.addEventListener("resize", () => {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    layoutCenterLogo();
+  });
+
+  // --- BILDER LADEN ----------------------------------------------------
+  const signet = new Image();
+  signet.src = "lmf_signet.png";  // kleines Logo (fliegt)
+
+  const centerLogo = new Image();
+  centerLogo.src = "lmf_logo.png"; // zentrales großes Logo
+
+
+  // --- FARBPALETTEN ----------------------------------------------------
+  // [Hintergrundfarbe, Vordergrundfarbe]
+  const palettes = [
+    ["#ffffff", "#1437ff"], // blau/weiß
+    ["#1437ff", "#ffffff"], // invertiert
+    ["#ffffff", "#e63946"], // rot/weiß
+    ["#e63946", "#ffffff"],
+    ["#ffffff", "#2fa34f"], // grün/weiß
+    ["#2fa34f", "#ffffff"]
+  ];
+  let paletteIndex = 0;
+
+
+  // --- ZENTRALES LOGO --------------------------------------------------
+  const center = { x: 0, y: 0, w: 0, h: 0 };
+
+  function layoutCenterLogo() {
+    const base = Math.min(W, H) * 0.45;
+    center.w = base * 1.4;
+    center.h = base * 0.6;
+    center.x = (W - center.w) / 2;
+    center.y = (H - center.h) / 2;
+  }
+  layoutCenterLogo();
+
+
+  // --- DVD FLIEGENDES LOGO ---------------------------------------------
+  const dvd = {
+    w: Math.min(W * 0.18, 260),
+    h: Math.min(H * 0.12, 120),
+    x: 80,
+    y: 60,
+    vx: 240,
+    vy: 180
+  };
+
+  let last = performance.now();
+
+
+  // --- USER INTERAKTION ------------------------------------------------
+  canvas.addEventListener("click", () => {
+    dvd.vx *= 1.07;
+    dvd.vy *= 1.07;
+  });
+
+  function nextPalette(){
+    paletteIndex = (paletteIndex + 1) % palettes.length;
+  }
+
+
+  // --- UPDATE LOGIK ----------------------------------------------------
+  function update(dt){
+
+    dvd.x += dvd.vx * dt;
+    dvd.y += dvd.vy * dt;
+
+    let bounced = false;
+
+    // Wände
+    if (dvd.x <= 0){
+      dvd.x = 0;
+      dvd.vx *= -1;
+      bounced = true;
+    }
+    if (dvd.x + dvd.w >= W){
+      dvd.x = W - dvd.w;
+      dvd.vx *= -1;
+      bounced = true;
+    }
+    if (dvd.y <= 0){
+      dvd.y = 0;
+      dvd.vy *= -1;
+      bounced = true;
+    }
+    if (dvd.y + dvd.h >= H){
+      dvd.y = H - dvd.h;
+      dvd.vy *= -1;
+      bounced = true;
+    }
+
+    if (bounced){
+      nextPalette();
+    }
+  }
+
+
+  // --- ZEICHNEN --------------------------------------------------------
+  function draw(){
+
+    const [bg, fg] = palettes[paletteIndex];
+
+    // Hintergrund
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,W,H);
+
+    // ZENTRALES LOGO
+    if (centerLogo.complete && centerLogo.naturalWidth > 0){
+      ctx.drawImage(centerLogo, center.x, center.y, center.w, center.h);
+    } else {
+      ctx.strokeStyle = fg;
+      ctx.lineWidth = 5;
+      ctx.strokeRect(center.x, center.y, center.w, center.h);
+    }
+
+    // FLIEGENDES SIGNET
+    if (signet.complete && signet.naturalWidth > 0){
+      ctx.drawImage(signet, dvd.x, dvd.y, dvd.w, dvd.h);
+    } else {
+      ctx.fillStyle = fg;
+      ctx.fillRect(dvd.x, dvd.y, dvd.w, dvd.h);
+    }
+
+    // --- OVERLAP FIX ---------------------------------------------------
+    const ox = Math.max(dvd.x, center.x);
+    const oy = Math.max(dvd.y, center.y);
+    const ow = Math.min(dvd.x + dvd.w, center.x + center.w) - ox;
+    const oh = Math.min(dvd.y + dvd.h, center.y + center.h) - oy;
+
+    if (ow > 0 && oh > 0){
+      // Lösche den Teil des fliegenden Logos über dem großen Logo
+      ctx.clearRect(ox, oy, ow, oh);
+
+      // Hintergrundfarbe einsetzen
+      ctx.fillStyle = bg;
+      ctx.fillRect(ox, oy, ow, oh);
+
+      // Danach das große Logo erneut zeichnen (überlagert korrekt)
+      if (centerLogo.complete && centerLogo.naturalWidth > 0){
+        ctx.drawImage(centerLogo, center.x, center.y, center.w, center.h);
+      }
+    }
+
+  }
+
+
+  // --- LOOP ------------------------------------------------------------
+  function loop(now){
+    const dt = (now - last) / 1000;
+    last = now;
+
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
