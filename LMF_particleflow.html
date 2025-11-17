@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>LMF – Particle Flow (Web)</title>
+<title>LMF – Particle Flow (50.000 Blue Particles)</title>
 <style>
   html,body{
     margin:0;
@@ -12,46 +12,36 @@
     overflow:hidden;
     background:#050714;
   }
-  body{
-    touch-action:none;
-    -webkit-user-select:none;
-    user-select:none;
-    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  }
   canvas{
     display:block;
     width:100vw;
     height:100vh;
-    background:radial-gradient(circle at top, #111633, #050714);
+    background:#050714;
   }
   .hud{
     position:fixed;
-    left:12px;
-    top:10px;
-    font-size:12px;
-    padding:5px 8px;
-    border-radius:10px;
-    background:rgba(5,7,20,0.85);
+    top:12px;
+    left:14px;
+    padding:6px 10px;
+    color:#dbe1ff;
+    background:rgba(5,7,20,0.65);
     border:1px solid rgba(255,255,255,0.08);
-    color:#e8ecff;
-    box-shadow:0 6px 18px rgba(0,0,0,0.35);
-  }
-  .hud strong{
-    font-weight:600;
+    border-radius:10px;
+    font-family:-apple-system,system-ui;
+    font-size:12px;
+    backdrop-filter:blur(6px);
   }
 </style>
 </head>
 <body>
 <canvas id="flow"></canvas>
-<div class="hud">
-  <strong>LMF Particle Flow</strong><br>
-  Tippen/Klicken: neuen Anziehungspunkt setzen (max. 5)<br>
-  Finger ziehen: Partikel folgen den Punkten.
-</div>
+<div class="hud">LMF Particle Flow · 50.000 Punkte · Blau · Touch = Kraftfeld</div>
+
 <script>
 (function(){
-  const canvas = document.getElementById('flow');
-  const ctx = canvas.getContext('2d');
+
+  const canvas = document.getElementById("flow");
+  const ctx = canvas.getContext("2d");
 
   let W = window.innerWidth;
   let H = window.innerHeight;
@@ -63,150 +53,104 @@
     canvas.height = H;
   }
   resize();
-  window.addEventListener('resize', resize);
+  window.addEventListener("resize", resize);
 
-  // Bis zu 5 Anziehungspunkte
-  const attractors = [];
+  const BLUE = "#1437ff";
+  const PARTICLES = 50000;
 
-  function addAttractor(x, y){
-    if (attractors.length >= 5) {
-      // Ältesten ersetzen
-      attractors.shift();
-    }
-    attractors.push({x, y});
-  }
-
-  // Farbe aus Geschwindigkeit: blau -> lila -> rot
-  function speedToColor(speed){
-    const s = Math.min(1, speed / 260); // 0..1
-    // Blau (#1437ff) nach Rot (#e63946) mit leichtem Lila dazwischen
-    const r1 = 0x14, g1 = 0x37, b1 = 0xff;
-    const r3 = 0xe6, g3 = 0x39, b3 = 0x46;
-
-    const r = Math.round(r1 + (r3 - r1) * s);
-    const g = Math.round(g1 + (g3 - g1) * s);
-    const b = Math.round(b1 + (b3 - b1) * s);
-    return `rgb(${r},${g},${b})`;
-  }
-
-  const particles = [];
-  const MAX_PARTICLES = 2500;
-
-  function resetParticle(p){
-    p.x = Math.random() * W;
-    p.y = Math.random() * H;
+  const points = [];
+  function resetPoint(p){
+    p.x = Math.random()*W;
+    p.y = Math.random()*H;
     p.vx = 0;
     p.vy = 0;
     p.life = 0;
-    p.maxLife = 5 + Math.random() * 4;
+    p.max = 4 + Math.random()*3;
   }
 
-  function initParticles(){
-    particles.length = 0;
-    for (let i = 0; i < MAX_PARTICLES; i++){
-      particles.push({
-        x: Math.random()*W,
-        y: Math.random()*H,
-        vx: 0,
-        vy: 0,
-        life: 0,
-        maxLife: 5 + Math.random()*4
-      });
+  // INITIALISIERUNG
+  for(let i=0; i<PARTICLES; i++){
+    const p = {x:0,y:0,vx:0,vy:0,life:0,max:0};
+    resetPoint(p);
+    points.push(p);
+  }
+
+  // ATTRACTORS
+  const attractors = [];
+
+  function addAttractor(x,y){
+    if(attractors.length >= 5)
+      attractors.shift();
+    attractors.push({x,y});
+  }
+
+  function getPos(e){
+    const r = canvas.getBoundingClientRect();
+    if(e.touches && e.touches[0]){
+      return {x:e.touches[0].clientX - r.left, y:e.touches[0].clientY - r.top};
     }
-  }
-  initParticles();
-
-  // Eingabe
-  function getPosFromEvent(e){
-    const rect = canvas.getBoundingClientRect();
-    if (e.touches && e.touches[0]){
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top
-      };
-    } else {
-      return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-      };
-    }
+    return {x:e.clientX - r.left, y:e.clientY - r.top};
   }
 
-  canvas.addEventListener('click', (e)=>{
-    const pos = getPosFromEvent(e);
-    addAttractor(pos.x, pos.y);
+  canvas.addEventListener("touchstart", e=>{
+    const p = getPos(e);
+    addAttractor(p.x,p.y);
+  },{passive:false});
+
+  canvas.addEventListener("click", e=>{
+    const p = getPos(e);
+    addAttractor(p.x,p.y);
   });
 
-  canvas.addEventListener('touchstart', (e)=>{
-    const pos = getPosFromEvent(e);
-    addAttractor(pos.x, pos.y);
-  }, {passive:false});
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.05,(now-last)/1000);
+    last = now;
 
-  let lastTime = performance.now();
-
-  function update(dt){
-    const decay = 0.85;      // Dämpfung
-    const forceStrength = 260; // Stärke der Anziehung
-
-    // leicht transparente Fläche, um Trails zu behalten
-    ctx.fillStyle = 'rgba(5,7,20,0.18)';
+    // sanftes "Trail"-Verschwimmen
+    ctx.fillStyle = "rgba(5,7,20,0.2)";
     ctx.fillRect(0,0,W,H);
 
-    ctx.lineWidth = 1.1;
-    ctx.lineCap = 'round';
+    ctx.fillStyle = BLUE;
+    ctx.beginPath();
 
-    for (let i = 0; i < particles.length; i++){
-      const p = particles[i];
-      const oldX = p.x;
-      const oldY = p.y;
+    for(let i=0; i<PARTICLES; i++){
+      const p = points[i];
+      const oldX = p.x, oldY = p.y;
 
-      // Summe der Kräfte durch Attractors
       let ax = 0, ay = 0;
-      for (let j = 0; j < attractors.length; j++){
-        const a = attractors[j];
+      for(const a of attractors){
         const dx = a.x - p.x;
         const dy = a.y - p.y;
-        const distSq = dx*dx + dy*dy + 20; // +20 vermeidet Division durch 0
-        const inv = 1 / Math.sqrt(distSq);
-        const force = forceStrength * inv * inv; // ~ 1/dist^2
-        ax += dx * inv * force;
-        ay += dy * inv * force;
+        const d2 = dx*dx + dy*dy + 30;
+        const inv = 1/Math.sqrt(d2);
+        const force = 160 * inv * inv;
+        ax += dx*inv*force;
+        ay += dy*inv*force;
       }
 
-      // Beschleunigung auf Geschwindigkeit anwenden
-      p.vx += ax * dt;
-      p.vy += ay * dt;
+      p.vx += ax*dt;
+      p.vy += ay*dt;
 
-      // Dämpfung
-      p.vx *= decay;
-      p.vy *= decay;
+      p.vx *= 0.86;
+      p.vy *= 0.86;
 
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
+      p.x += p.vx*dt;
+      p.y += p.vy*dt;
       p.life += dt;
 
-      // Rand / Lebenszeit
-      if (p.x < -20 || p.x > W+20 || p.y < -20 || p.y > H+20 || p.life > p.maxLife){
-        resetParticle(p);
+      if(p.x<0 || p.x>W || p.y<0 || p.y>H || p.life>p.max){
+        resetPoint(p);
         continue;
       }
 
-      const speed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
-      ctx.strokeStyle = speedToColor(speed);
-
-      ctx.beginPath();
-      ctx.moveTo(oldX, oldY);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
+      ctx.rect(p.x,p.y,1.1,1.1);
     }
-  }
 
-  function loop(now){
-    const dt = Math.min(0.05, (now - lastTime) / 1000);
-    lastTime = now;
-    update(dt);
+    ctx.fill();
     requestAnimationFrame(loop);
   }
+
   requestAnimationFrame(loop);
 
 })();
