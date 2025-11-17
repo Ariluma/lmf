@@ -3,39 +3,47 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>LMF – Particle Flow (50.000 Blue Particles)</title>
+<title>LMF – Particle Flow (White, 50k Blue)</title>
 <style>
   html,body{
     margin:0;
     padding:0;
     height:100%;
     overflow:hidden;
-    background:#050714;
+    background:#ffffff;
+  }
+  body{
+    touch-action:none;
+    -webkit-user-select:none;
+    user-select:none;
+    font-family:-apple-system,system-ui,BlinkMacSystemFont,"Segoe UI",sans-serif;
   }
   canvas{
     display:block;
     width:100vw;
     height:100vh;
-    background:#050714;
+    background:#ffffff;
   }
   .hud{
     position:fixed;
-    top:12px;
-    left:14px;
-    padding:6px 10px;
-    color:#dbe1ff;
-    background:rgba(5,7,20,0.65);
-    border:1px solid rgba(255,255,255,0.08);
-    border-radius:10px;
-    font-family:-apple-system,system-ui;
+    left:12px;
+    top:10px;
     font-size:12px;
-    backdrop-filter:blur(6px);
+    padding:5px 9px;
+    border-radius:10px;
+    background:rgba(255,255,255,0.9);
+    border:1px solid rgba(0,0,0,0.06);
+    color:#111827;
+    box-shadow:0 6px 18px rgba(0,0,0,0.12);
   }
 </style>
 </head>
 <body>
 <canvas id="flow"></canvas>
-<div class="hud">LMF Particle Flow · 50.000 Punkte · Blau · Touch = Kraftfeld</div>
+<div class="hud">
+  LMF Particle Flow · 50.000 Punkte<br>
+  Tippen: Punkt setzen (max. 3) · Halten: Stärke ↑
+</div>
 
 <script>
 (function(){
@@ -58,93 +66,147 @@
   const BLUE = "#1437ff";
   const PARTICLES = 50000;
 
-  const points = [];
-  function resetPoint(p){
+  const particles = [];
+  function resetParticle(p){
     p.x = Math.random()*W;
     p.y = Math.random()*H;
     p.vx = 0;
     p.vy = 0;
     p.life = 0;
-    p.max = 4 + Math.random()*3;
+    p.maxLife = 4 + Math.random()*3;
   }
 
-  // INITIALISIERUNG
-  for(let i=0; i<PARTICLES; i++){
-    const p = {x:0,y:0,vx:0,vy:0,life:0,max:0};
-    resetPoint(p);
-    points.push(p);
+  for(let i=0;i<PARTICLES;i++){
+    const p = {x:0,y:0,vx:0,vy:0,life:0,maxLife:0};
+    resetParticle(p);
+    particles.push(p);
   }
 
-  // ATTRACTORS
-  const attractors = [];
+  // Fixierte Attractor-Punkte
+  const attractors = []; // {x,y,strength}
+  let activeAttractor = null; // aktuell gedrückter Punkt
 
   function addAttractor(x,y){
-    if(attractors.length >= 5)
+    const a = {x:x,y:y,strength:0.4}; // Einstieg mit leichter Stärke
+    if(attractors.length >= 3){
+      // ältesten löschen
       attractors.shift();
-    attractors.push({x,y});
+    }
+    attractors.push(a);
+    activeAttractor = a;
   }
 
   function getPos(e){
     const r = canvas.getBoundingClientRect();
     if(e.touches && e.touches[0]){
-      return {x:e.touches[0].clientX - r.left, y:e.touches[0].clientY - r.top};
+      return {
+        x: e.touches[0].clientX - r.left,
+        y: e.touches[0].clientY - r.top
+      };
     }
-    return {x:e.clientX - r.left, y:e.clientY - r.top};
+    return {
+      x: e.clientX - r.left,
+      y: e.clientY - r.top
+    };
+  }
+
+  // Touch / Maus: neuen Punkt setzen + ggf. halten
+  function pointerDown(e){
+    const p = getPos(e);
+    addAttractor(p.x,p.y);
+  }
+
+  function pointerMove(e){
+    if(!activeAttractor) return;
+    const p = getPos(e);
+    // Optional: aktiven Punkt mit Finger mitbewegen
+    activeAttractor.x = p.x;
+    activeAttractor.y = p.y;
+  }
+
+  function pointerUp(){
+    activeAttractor = null;
   }
 
   canvas.addEventListener("touchstart", e=>{
-    const p = getPos(e);
-    addAttractor(p.x,p.y);
+    e.preventDefault();
+    pointerDown(e);
   },{passive:false});
 
-  canvas.addEventListener("click", e=>{
-    const p = getPos(e);
-    addAttractor(p.x,p.y);
+  canvas.addEventListener("touchmove", e=>{
+    e.preventDefault();
+    pointerMove(e);
+  },{passive:false});
+
+  canvas.addEventListener("touchend", e=>{
+    e.preventDefault();
+    pointerUp();
   });
 
+  canvas.addEventListener("mousedown", e=>{
+    pointerDown(e);
+  });
+
+  canvas.addEventListener("mousemove", e=>{
+    if(e.buttons & 1){
+      pointerMove(e);
+    }
+  });
+
+  window.addEventListener("mouseup", pointerUp);
+
   let last = performance.now();
+
   function loop(now){
     const dt = Math.min(0.05,(now-last)/1000);
     last = now;
 
-    // sanftes "Trail"-Verschwimmen
-    ctx.fillStyle = "rgba(5,7,20,0.2)";
+    // aktive Berührung: Stärke langsam erhöhen bis max
+    if(activeAttractor){
+      activeAttractor.strength = Math.min(1.8, activeAttractor.strength + dt*0.6);
+    }
+
+    // Weißer Hintergrund mit leichtem Fade, um Trails zu behalten
+    ctx.fillStyle = "rgba(255,255,255,0.2)";
     ctx.fillRect(0,0,W,H);
 
     ctx.fillStyle = BLUE;
     ctx.beginPath();
 
-    for(let i=0; i<PARTICLES; i++){
-      const p = points[i];
-      const oldX = p.x, oldY = p.y;
+    const damping = 0.86;
+    const baseForce = 160;
+
+    for(let i=0;i<PARTICLES;i++){
+      const p = particles[i];
 
       let ax = 0, ay = 0;
-      for(const a of attractors){
+      for(let j=0;j<attractors.length;j++){
+        const a = attractors[j];
         const dx = a.x - p.x;
         const dy = a.y - p.y;
-        const d2 = dx*dx + dy*dy + 30;
-        const inv = 1/Math.sqrt(d2);
-        const force = 160 * inv * inv;
-        ax += dx*inv*force;
-        ay += dy*inv*force;
+        const d2 = dx*dx + dy*dy + 40; // +40: Vermeide extreme Kräfte
+        const inv = 1 / Math.sqrt(d2);
+        const force = baseForce * (a.strength || 0.4) * inv * inv; // ~1/r^2
+        ax += dx * inv * force;
+        ay += dy * inv * force;
       }
 
-      p.vx += ax*dt;
-      p.vy += ay*dt;
+      p.vx += ax * dt;
+      p.vy += ay * dt;
 
-      p.vx *= 0.86;
-      p.vy *= 0.86;
+      p.vx *= damping;
+      p.vy *= damping;
 
-      p.x += p.vx*dt;
-      p.y += p.vy*dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
       p.life += dt;
 
-      if(p.x<0 || p.x>W || p.y<0 || p.y>H || p.life>p.max){
-        resetPoint(p);
+      if(p.x < -20 || p.x > W+20 || p.y < -20 || p.y > H+20 || p.life > p.maxLife){
+        resetParticle(p);
         continue;
       }
 
-      ctx.rect(p.x,p.y,1.1,1.1);
+      ctx.rect(p.x, p.y, 1.0, 1.0);
     }
 
     ctx.fill();
