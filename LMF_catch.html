@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LMF – Catch Game</title>
+<style>
+  html,body{
+    margin:0;
+    padding:0;
+    height:100%;
+    overflow:hidden;
+    background:#ffffff;
+  }
+  body{
+    touch-action:none;
+    -webkit-user-select:none;
+    user-select:none;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  canvas{
+    display:block;
+    width:100vw;
+    height:100vh;
+    background:#ffffff;
+  }
+  .hud{
+    position:fixed;
+    left:12px;
+    top:10px;
+    font-size:13px;
+    padding:5px 8px;
+    border-radius:10px;
+    background:rgba(255,255,255,0.9);
+    border:1px solid rgba(0,0,0,0.08);
+    box-shadow:0 4px 10px rgba(0,0,0,0.08);
+    color:#111;
+  }
+  .hud span{
+    display:inline-block;
+    margin-right:10px;
+  }
+  .msg{
+    position:fixed;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    text-align:center;
+    background:rgba(255,255,255,0.96);
+    border-radius:18px;
+    padding:16px 20px;
+    max-width:260px;
+    border:1px solid rgba(0,0,0,0.08);
+    box-shadow:0 16px 40px rgba(0,0,0,0.25);
+    color:#111;
+    font-size:14px;
+  }
+  .msg h1{
+    margin:0 0 6px;
+    font-size:20px;
+  }
+  .msg button{
+    margin-top:10px;
+    padding:8px 14px;
+    font-size:14px;
+    border-radius:999px;
+    border:none;
+    background:#1437ff;
+    color:white;
+    font-weight:600;
+  }
+  .msg button:active{
+    transform:scale(0.97);
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="hud" id="hud">
+  <span id="scoreLabel">Score: 0</span>
+  <span id="livesLabel">Leben: 3</span>
+</div>
+<div class="msg" id="startMsg">
+  <h1>LMF Catch</h1>
+  <p>Bewege den blauen Balken unten mit dem Finger und fange die Signets.<br>Tippe, um zu starten.</p>
+  <button id="startBtn">Start</button>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  const hudScore = document.getElementById('scoreLabel');
+  const hudLives = document.getElementById('livesLabel');
+  const startMsg = document.getElementById('startMsg');
+  const startBtn = document.getElementById('startBtn');
+
+  let W = window.innerWidth;
+  let H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    // Paddle neu positionieren
+    paddle.y = H - 50;
+    paddle.w = Math.max(80, W * 0.22);
+  }
+  window.addEventListener('resize', resize);
+
+  // Bilder
+  const signetImg = new Image();
+  signetImg.src = 'lmf_signet.png'; // muss im selben Ordner liegen
+
+  // Spiel-Objekte
+  const paddle = {
+    x: W * 0.5,
+    y: H - 50,
+    w: Math.max(80, W * 0.22),
+    h: 14,
+    color: '#1437ff'
+  };
+
+  let drops = [];       // fallende Signets
+  let dropTimer = 0;    // Zeit bis zum nächsten Spawn
+  let running = false;  // Game läuft?
+  let gameOver = false;
+
+  let score = 0;
+  let lives = 3;
+  let lastTime = performance.now();
+
+  function resetGame(){
+    score = 0;
+    lives = 3;
+    drops = [];
+    dropTimer = 0;
+    running = true;
+    gameOver = false;
+    hudScore.textContent = 'Score: ' + score;
+    hudLives.textContent = 'Leben: ' + lives;
+    startMsg.style.display = 'none';
+  }
+
+  function endGame(){
+    running = false;
+    gameOver = true;
+    startMsg.querySelector('h1').textContent = 'Game Over';
+    startMsg.querySelector('p').textContent = 'Score: ' + score + '. Tippe, um erneut zu spielen.';
+    startMsg.style.display = 'block';
+  }
+
+  startBtn.addEventListener('click', () => {
+    resetGame();
+  });
+
+  startMsg.addEventListener('click', (e) => {
+    if(e.target === startMsg){
+      resetGame();
+    }
+  });
+
+  // Eingabe: Touch & Maus
+  function handlePos(clientX){
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    paddle.x = Math.min(W - paddle.w/2, Math.max(paddle.w/2, x));
+  }
+
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    handlePos(t.clientX);
+  }, {passive:false});
+
+  canvas.addEventListener('touchmove', e => {
+    const t = e.touches[0];
+    handlePos(t.clientX);
+  }, {passive:false});
+
+  canvas.addEventListener('mousedown', e => {
+    handlePos(e.clientX);
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (e.buttons & 1) {
+      handlePos(e.clientX);
+    }
+  });
+
+  // Logik
+  function spawnDrop(){
+    const sizeBase = Math.min(W, H) * 0.12;
+    const d = {
+      x: Math.random() * (W - sizeBase) + sizeBase * 0.2,
+      y: -sizeBase,
+      w: sizeBase,
+      h: sizeBase * 0.45,
+      vy: 120 + score * 4 // Geschwindigkeit steigt mit Score
+    };
+    drops.push(d);
+  }
+
+  function update(dt){
+    if(!running) return;
+
+    // Spawn
+    dropTimer -= dt;
+    if(dropTimer <= 0){
+      spawnDrop();
+      dropTimer = Math.max(0.5, 1.6 - score * 0.03); // mit Score entstehen schneller neue
+    }
+
+    // Drops bewegen
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const d = drops[i];
+      d.y += d.vy * dt;
+
+      // Kollision mit Paddle?
+      const paddleLeft = paddle.x - paddle.w/2;
+      const paddleRight = paddle.x + paddle.w/2;
+      const paddleTop = paddle.y;
+      const paddleBottom = paddle.y + paddle.h;
+
+      const dropLeft = d.x;
+      const dropRight = d.x + d.w;
+      const dropTop = d.y;
+      const dropBottom = d.y + d.h;
+
+      const overlap =
+        dropRight > paddleLeft &&
+        dropLeft < paddleRight &&
+        dropBottom > paddleTop &&
+        dropTop < paddleBottom;
+
+      if (overlap) {
+        // gefangen
+        drops.splice(i, 1);
+        score++;
+        hudScore.textContent = 'Score: ' + score;
+        continue;
+      }
+
+      // verpasst?
+      if (d.y > H + 40) {
+        drops.splice(i, 1);
+        lives--;
+        hudLives.textContent = 'Leben: ' + lives;
+        if (lives <= 0) {
+          endGame();
+          return;
+        }
+      }
+    }
+  }
+
+  function draw(){
+    // Hintergrund
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,W,H);
+
+    // leichte vertikale Linie zur Orientierung
+    ctx.strokeStyle = '#edf0f8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W/2, 0);
+    ctx.lineTo(W/2, H);
+    ctx.stroke();
+
+    // Paddle
+    ctx.fillStyle = paddle.color;
+    ctx.fillRect(paddle.x - paddle.w/2, paddle.y, paddle.w, paddle.h);
+
+    // Drops (Signets)
+    for (const d of drops) {
+      if (signetImg.complete && signetImg.naturalWidth > 0) {
+        ctx.drawImage(signetImg, d.x, d.y, d.w, d.h);
+      } else {
+        // Fallback: einfache Form
+        ctx.fillStyle = '#1437ff';
+        ctx.fillRect(d.x, d.y, d.w, d.h);
+      }
+    }
+  }
+
+  function loop(now){
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
