@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LMF – Particle Flow</title>
+<style>
+  html,body{
+    margin:0;
+    padding:0;
+    height:100%;
+    overflow:hidden;
+    background:#050714;
+  }
+  body{
+    touch-action:none;
+    -webkit-user-select:none;
+    user-select:none;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  canvas{
+    display:block;
+    width:100vw;
+    height:100vh;
+    background:radial-gradient(circle at top, #111633, #050714);
+  }
+  .hud{
+    position:fixed;
+    left:12px;
+    top:10px;
+    font-size:12px;
+    padding:5px 8px;
+    border-radius:10px;
+    background:rgba(5,7,20,0.85);
+    border:1px solid rgba(255,255,255,0.08);
+    color:#e8ecff;
+    box-shadow:0 6px 18px rgba(0,0,0,0.35);
+  }
+  .hud strong{
+    font-weight:600;
+  }
+</style>
+</head>
+<body>
+<canvas id="flow"></canvas>
+<div class="hud">
+  <strong>LMF Particle Flow</strong><br>
+  Zieh mit dem Finger über den Screen · Tap = Farbwechsel
+</div>
+<script>
+(function(){
+  const canvas = document.getElementById('flow');
+  const ctx = canvas.getContext('2d');
+
+  let W = window.innerWidth;
+  let H = window.innerHeight;
+  function resize(){
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Farbschemata im LMF-Stil
+  const palettes = [
+    ['#1437ff','#9ab7ff','#ffffff'],
+    ['#e63946','#ff9aa2','#ffffff'],
+    ['#2fa34f','#a7f3d0','#ffffff'],
+    ['#fbbf24','#fde68a','#ffffff']
+  ];
+  let paletteIndex = 0;
+  function currentPalette(){
+    return palettes[paletteIndex];
+  }
+
+  // Flow-Field: einfaches Vektorfeld basierend auf Noise-ähnlicher Funktion
+  const fieldScale = 80; // Größe einer Zelle
+  function flowAngle(x, y, t){
+    // einfache pseudo-Noise-Funktion mit Sin/Cos
+    const nx = x / fieldScale;
+    const ny = y / fieldScale;
+    return Math.sin(nx * 1.3 + t*0.15) + Math.cos(ny * 1.7 - t*0.1);
+  }
+
+  const particles = [];
+  const maxParticles = 400;
+
+  function resetParticle(p){
+    p.x = Math.random() * W;
+    p.y = Math.random() * H;
+    p.vx = 0;
+    p.vy = 0;
+    p.life = 0;
+    p.maxLife = 4 + Math.random()*4;
+  }
+
+  function createParticles(){
+    particles.length = 0;
+    for (let i = 0; i < maxParticles; i++){
+      particles.push({
+        x: Math.random()*W,
+        y: Math.random()*H,
+        vx: 0,
+        vy: 0,
+        life:0,
+        maxLife: 4 + Math.random()*4
+      });
+    }
+  }
+  createParticles();
+
+  // Touch / Maus-Einfluss
+  let pointer = {
+    x: W/2,
+    y: H/2,
+    active: false
+  };
+
+  function setPointerFromEvent(e){
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches && e.touches[0]){
+      pointer.x = e.touches[0].clientX - rect.left;
+      pointer.y = e.touches[0].clientY - rect.top;
+    } else {
+      pointer.x = e.clientX - rect.left;
+      pointer.y = e.clientY - rect.top;
+    }
+  }
+
+  canvas.addEventListener('touchstart', (e)=>{
+    pointer.active = true;
+    setPointerFromEvent(e);
+  }, {passive:false});
+
+  canvas.addEventListener('touchmove', (e)=>{
+    pointer.active = true;
+    setPointerFromEvent(e);
+  }, {passive:false});
+
+  canvas.addEventListener('touchend', ()=>{
+    pointer.active = false;
+  });
+
+  canvas.addEventListener('mousedown', (e)=>{
+    pointer.active = true;
+    setPointerFromEvent(e);
+  });
+
+  canvas.addEventListener('mousemove', (e)=>{
+    if (e.buttons & 1){
+      pointer.active = true;
+      setPointerFromEvent(e);
+    }
+  });
+
+  window.addEventListener('mouseup', ()=>{
+    pointer.active = false;
+  });
+
+  // Tap = Palette wechseln
+  let lastTapTime = 0;
+  canvas.addEventListener('click', ()=>{
+    const now = performance.now();
+    // einfache Debounce
+    if (now - lastTapTime > 200){
+      lastTapTime = now;
+      paletteIndex = (paletteIndex + 1) % palettes.length;
+    }
+  });
+
+  let lastTime = performance.now();
+
+  function update(dt){
+    const t = lastTime / 1000;
+    const pal = currentPalette();
+
+    // leichte transparente Fläche statt volles Clear: "Trails"
+    ctx.fillStyle = 'rgba(5,7,20,0.19)';
+    ctx.fillRect(0,0,W,H);
+
+    ctx.lineWidth = 1.2;
+    ctx.lineCap = 'round';
+
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+
+      const angle = flowAngle(p.x, p.y, t);
+      const speed = 40; // Basisgeschwindigkeit
+      const ax = Math.cos(angle) * speed;
+      const ay = Math.sin(angle) * speed;
+
+      // Pointer-Einfluss
+      let fx = 0, fy = 0;
+      if (pointer.active){
+        const dx = pointer.x - p.x;
+        const dy = pointer.y - p.y;
+        const distSq = dx*dx + dy*dy;
+        const maxInfluenceDist = 260;
+        if (distSq < maxInfluenceDist*maxInfluenceDist){
+          const dist = Math.sqrt(distSq) || 0.0001;
+          const force = (maxInfluenceDist - dist) / maxInfluenceDist;
+          // leicht anziehend
+          fx += (dx/dist) * force * 80;
+          fy += (dy/dist) * force * 80;
+        }
+      }
+
+      p.vx += (ax + fx) * dt;
+      p.vy += (ay + fy) * dt;
+
+      // Dämpfung
+      p.vx *= 0.9;
+      p.vy *= 0.9;
+
+      const oldX = p.x;
+      const oldY = p.y;
+
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life += dt;
+
+      // Grenzen
+      if (p.x < 0 || p.x > W || p.y < 0 || p.y > H || p.life > p.maxLife){
+        resetParticle(p);
+        continue;
+      }
+
+      // Farbe abhängig von Geschwindigkeit
+      const vmag = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+      const cIndex = Math.min(pal.length-1, Math.floor((vmag/200) * pal.length));
+      ctx.strokeStyle = pal[cIndex];
+
+      ctx.beginPath();
+      ctx.moveTo(oldX, oldY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+  }
+
+  function loop(now){
+    const dt = Math.min(0.05, (now - lastTime)/1000);
+    lastTime = now;
+    update(dt);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
